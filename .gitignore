@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Environment variables (never commit real secrets)
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Local development artifacts
+cinemascrape.db
+cinemascrape.db-shm
+cinemascrape.db-wal
+showtimes.html
+PLAN.md
+dogfood-output/
