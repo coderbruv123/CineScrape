@@ -1,0 +1,27 @@
+{
+  "name": "cinemascrapper",
+  "version": "0.1.0",
+  "description": "Cinema Scrapper - Nepali cinema aggregator (movies, theaters, showtimes, ticket prices)",
+  "main": "src/api/index.js",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "axios": "^1.8.3",
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "node-cron": "^3.0.3"
+  },
+  "scripts": {
+    "dev": "node src/api/index.js",
+    "dev:watch": "node --watch src/api/index.js",
+    "scrape": "node src/run.js",
+    "db:migrate": "node src/db/migrate.js"
+  },
+  "devDependencies": {
+    "swagger-jsdoc": "^6.3.0",
+    "swagger-ui-express": "^5.0.1"
+  }
+}
