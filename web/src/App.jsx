@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, Routes, Route } from 'react-router-dom';
+import { Link, useRoutes } from 'react-router-dom';
 import { api } from './api.js';
 import HomePage from './pages/HomePage.jsx';
 import MovieDetailPage from './pages/MovieDetailPage.jsx';
@@ -39,6 +39,12 @@ function SourcesPage() {
 }
 
 export default function App() {
+  const routeElement = useRoutes([
+    { path: '/movies/:slug', element: <MovieDetailPage /> },
+    { path: '/theaters', element: <TheatersPage /> },
+    { path: '/sources', element: <SourcesPage /> },
+    { path: '/', element: <HomePage /> },
+  ]);
   return (
     <div className="app">
       <header className="app-header">
@@ -55,12 +61,7 @@ export default function App() {
         </div>
       </header>
       <main className="app-main">
-        <Routes>
-          <Route path="/movies/:slug" element={<MovieDetailPage />} />
-          <Route path="/theaters" element={<TheatersPage />} />
-          <Route path="/sources" element={<SourcesPage />} />
-          <Route path="/" element={<HomePage />} />
-        </Routes>
+        {routeElement}
       </main>
       <footer className="app-footer">Cinema Scrapper — aggregated from The Film Nepal</footer>
     </div>

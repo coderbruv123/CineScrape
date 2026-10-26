@@ -47,10 +47,16 @@ export function scheduleRefresh() {
       console.log(`[scheduler] theaters saved: ${theaters.length}`);
 
       const st = await scraper.scrapeShowtimes();
-      for (let i = 0; i < Math.min(st.length, 8); i++) {
-        saveShowtime({ sourceId: source.id, movieId: 0, theaterId: 0, showDate: '2026-10-24', sessionTime: '19:30' });
+      let saved = 0;
+      for (const s of st) {
+        const m = query('SELECT id FROM movies WHERE slug = ? AND is_active = 1', [s.movieSlug]);
+        const t = query('SELECT id FROM theaters WHERE slug = ? AND is_active = 1', [s.theaterSlug]);
+        if (m.length && t.length) {
+          saveShowtime({ sourceId: source.id, movieId: m[0].id, theaterId: t[0].id, showDate: '2026-10-24', sessionTime: s.time });
+          saved += 1;
+        }
       }
-      console.log(`[scheduler] showtimes saved: ${Math.min(st.length, 8)}`);
+      console.log(`[scheduler] Linked ${saved} showtimes to real movies/theaters`);
 
       await scraper.axios.close();
     } catch (err) {

@@ -47,13 +47,19 @@ async function main() {
   }
   console.log(`[run] Saved ${theaters.length} theaters`);
 
-  // 3) showtimes (stub for MVP; real per-movie/per-theater mapping added later)
+  // 3) showtimes (link each record to its real movie + theater by slug)
   console.log('[run] Scraping showtimes...');
   const showtimes = await scraper.scrapeShowtimes();
-  for (let i = 0; i < Math.min(showtimes.length, 10); i++) {
-    saveShowtime({ sourceId: source.id, movieId: 0, theaterId: 0, showDate: '2026-10-24', sessionTime: '19:30' });
+  let saved = 0;
+  for (const st of showtimes) {
+    const m = query('SELECT id FROM movies WHERE slug = ? AND is_active = 1', [st.movieSlug]);
+    const t = query('SELECT id FROM theaters WHERE slug = ? AND is_active = 1', [st.theaterSlug]);
+    if (m.length && t.length) {
+      saveShowtime({ sourceId: source.id, movieId: m[0].id, theaterId: t[0].id, showDate: '2026-10-24', sessionTime: st.time });
+      saved += 1;
+    }
   }
-  console.log(`[run] Saved ${Math.min(showtimes.length, 10)} showtime stub rows`);
+  console.log(`[run] Linked ${saved} showtimes to real movies/theaters`);
 
   // 4) ticket prices (price comparison across cinemas)
   console.log('[run] Scraping ticket prices...');

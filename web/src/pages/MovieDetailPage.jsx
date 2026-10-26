@@ -1,25 +1,24 @@
-import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import Spinner from '../components/Spinner.jsx';
 import ErrorMessage from '../components/ErrorMessage.jsx';
-import TheatersList from '../components/TheatersList.jsx';
 
 export default function MovieDetailPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
   const [movie, setMovie] = useState(null);
-  const [theaters, setTheaters] = useState([]);
+  const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     api.getMovie(slug)
-      .then((res) => setMovie(res.data))
+      .then((res) => setMovie(res))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-    api.getTheaters()
-      .then((res) => setTheaters(res.data || []))
+    api.getPrices(slug)
+      .then((res) => setTickets(res.theaters || []))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [slug]);
@@ -64,11 +63,39 @@ export default function MovieDetailPage() {
           </div>
           {error && <ErrorMessage message={error} />}
           {loading && !error && <Spinner />}
-          {!loading && !error && theaters.length > 0 && (
+          {!loading && !error && tickets.length > 0 && (
             <section className="section">
-              <h2>Theaters showing this movie</h2>
-              <TheatersList theaters={theaters} />
+              <div className="section__head">
+                <h2>Tickets &amp; Cinemas</h2>
+              </div>
+              <div className="ticket-flow">
+                {tickets.map((t) => (
+                  <div key={t.slug} className="theater-row">
+                    <div className="theater-row__name">
+                      <span className="tmark">🎬</span> {t.name}
+                    </div>
+                    <div className="ticket-prices">
+                      {t.prices.map((p, i) => (
+                        <div key={i} className="ticket-item">
+                          <span className="ticket-item__cat">{p.seat_category || 'General'}</span>
+                          <span className="ticket-item__time">{p.time_from}–{p.time_to}</span>
+                          <span className="ticket-item__price">Rs {Math.round(Number(p.price_regular))}</span>
+                          {p.price_holiday != null && (
+                            <span className="ticket-item__alt">holiday Rs {Math.round(Number(p.price_holiday))}</span>
+                          )}
+                          {p.price_new_release != null && (
+                            <span className="ticket-item__alt">new Rs {Math.round(Number(p.price_new_release))}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </section>
+          )}
+          {!loading && !error && tickets.length === 0 && (
+            <p className="empty">No ticket prices yet for this movie.</p>
           )}
         </div>
       </div>

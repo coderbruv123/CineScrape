@@ -46,10 +46,14 @@ export const api = {
   },
 
   async getTheaterMovies(theaterId) {
-    return apiFetch('/v1/theaters/' + theaterId + '/movies')
+    return apiFetch('/v1/theaters/' + theaterId + '/movies');
   },
 
   async getSources() {
-    return apiFetch('/v1/sources')
+    return apiFetch('/v1/sources');
   },
-}
+
+  async getPrices(movieSlug) {
+    return apiFetch('/v1/prices?movie=' + encodeURIComponent(movieSlug));
+  },
+};

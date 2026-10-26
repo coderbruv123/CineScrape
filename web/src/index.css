@@ -186,6 +186,17 @@ button.primary:hover { background: var(--accent-hover); }
 }
 .theater-row__name { font-weight: 600; }
 .theater-row__meta { color: var(--muted); font-size: 12px; }
+.ticket-flow { display: flex; flex-direction: column; gap: 10px; }
+.ticket-item {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 6px 10px; font-size: 13px;
+}
+.ticket-item__cat { font-weight: 600; color: var(--text); }
+.ticket-item__time { color: var(--muted); }
+.ticket-item__price { font-weight: 600; color: var(--accent); }
+.ticket-item__alt { color: var(--muted); font-size: 12px; }
+.tmark { font-size: 14px; margin-right: 6px; }
 
 .spinner {
   display: flex;

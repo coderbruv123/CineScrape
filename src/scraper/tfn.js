@@ -91,6 +91,8 @@ export class TFNScraper {
             posterUrl: g.image || null,
             genre: Array.isArray(g.genre) ? g.genre.join(', ') : g.genre || null,
             releaseDate: g.datePublished || g.dateModified || null,
+            // Year is not a first-class field in the source; derive it from datePublished.
+            year: g.datePublished ? parseInt(g.datePublished.substring(0, 4), 10) : null,
             runtimeMinutes: this.durationToMinutes(g.duration),
             cast: actor,
             director: dir,
