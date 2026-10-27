@@ -14,3 +14,24 @@ cinemascrape.db-wal
 showtimes.html
 PLAN.md
 dogfood-output/
+
+# Khalti scraper scratch scripts
+save_khalti_data.mjs
+fix_db.py
+fix_db2.py
+fix_db3.py
+fix_db_end.py
+fix_db_end2.py
+analyze_duplicates.py
+diag.py
+diag2.py
+extract_showtimes.py
+inspect_cinemas.py
+inspect_cinemas2.py
+inspect_cinemas3.py
+inspect_jsonld.py
+inspect_showtimes.py
+inspect_showtimes2.py
+test_jsonld.mjs
+test_jsonld2.mjs
+web/mock-main-pages.html

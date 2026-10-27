@@ -9,6 +9,9 @@ export default function MovieDetailPage() {
   const navigate = useNavigate();
   const [movie, setMovie] = useState(null);
   const [tickets, setTickets] = useState([]);
+  const [khaltiMovie, setKhaltiMovie] = useState(null);
+  const [khaltiShowtimes, setKhaltiShowtimes] = useState([]);
+  const [khaltiCinemas, setKhaltiCinemas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -17,10 +20,34 @@ export default function MovieDetailPage() {
       .then((res) => setMovie(res))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
+
     api.getPrices(slug)
       .then((res) => setTickets(res.theaters || []))
       .catch(() => {})
       .finally(() => setLoading(false));
+
+    // Fetch Khalti data for this movie (Khalti uses idx as the identifier)
+    let cancelled = false;
+    Promise.all([
+      api.getKhaltiMovieShowtimes(slug).catch(() => null),
+      api.getKhaltiCinemas().catch(() => null),
+    ])
+      .then(([showtimesRes, cinemasRes]) => {
+        if (cancelled) return;
+        if (showtimesRes && showtimesRes.showtimes) {
+          setKhaltiShowtimes(showtimesRes.showtimes);
+          setKhaltiMovie(showtimesRes);
+        }
+        if (cinemasRes && cinemasRes.data) {
+          setKhaltiCinemas(cinemasRes.data);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+
+    return () => {
+      cancelled = true;
+    };
   }, [slug]);
 
   if (!movie && !error) return <Spinner full />;
@@ -99,6 +126,64 @@ export default function MovieDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Khalti source data (cinemas + showtimes + booking links) */}
+      {!loading && khaltiShowtimes.length > 0 && (
+        <section className="section">
+          <div className="section__head">
+            <h2>Khalti — Cinemas &amp; Showtimes</h2>
+          </div>
+          <div className="theater-flow">
+            {khaltiCinemas.map((h) => {
+              const hShows = khaltiShowtimes.filter((s) => s.cinemaIdx === h.idx);
+              return (
+                <div key={h.idx} className="theater-row">
+                  <div className="ticket-prices">
+                    <div className="row">
+                      <span className="label">Hall</span>
+                      <span className="val">{h.name}</span>
+                    </div>
+                    <div className="row">
+                      <span className="label">Shows</span>
+                      <span className="val">{hShows.length}</span>
+                    </div>
+                    <div className="row">
+                      <span className="label">Availability</span>
+                      <span className="val">{hShows.length > 0 ? 'Online booking' : '—'}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="showtime-grid">
+            {khaltiShowtimes.map((s) => {
+              const cinema = khaltiCinemas.find((h) => h.idx === s.cinemaIdx);
+              return (
+                <div key={`${s.cinemaIdx}-${s.showDate}-${s.sessionTime}`} className="showtime-item">
+                  <div className="showtime-item__cinema">
+                    {cinema ? cinema.name : s.cinemaName}
+                  </div>
+                  <div className="showtime-item__time">
+                    {s.showDate} {s.sessionTime}
+                  </div>
+                  <div className="showtime-item__seats">
+                    {s.availableSeats != null ? `${s.availableSeats}/${s.totalSeats}` : '—'}
+                  </div>
+                  <a
+                    href={s.bookingUrl}
+                    target="_blank"
+                    rel="noopener"
+                    className="btn btn-small"
+                  >
+                    Book
+                  </a>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

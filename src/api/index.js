@@ -11,7 +11,8 @@
  */
 
 import express from 'express';
-import { query, ensureSource, saveMovie, saveTheater, saveShowtime, savePrice, getPricesByTheater } from '../db/database.js';
+import { query, ensureSource, saveMovie, saveTheater, saveShowtime, savePrice, getPricesByTheater, saveKhaltiMovie, saveKhaltiCinema, saveKhaltiShowtime } from '../db/database.js';
+import { KhaltiScraper } from '../scraper/khalti.js';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import swaggerUi from 'swagger-ui-express';
@@ -124,6 +125,169 @@ app.get('/api/v1/theaters/:id/movies', (req, res) => {
     theater: { id: theaterRow.id, name: theaterRow.name, city: theaterRow.city },
     movies,
   });
+});
+
+// -------------------------------------------------------------- Khalti
+// Khalti cinema (halls) + movie + showtime data.
+//   /api/v1/khalti/cinemas       hall (cinema) listing
+//   /api/v1/khalti/movies       now-playing movies
+//   /api/v1/khalti/movies/:idx  per-movie showtimes + booking refs
+
+const khaltiScraper = new KhaltiScraper();
+
+// Khalti DB helpers
+const khaltiMovieSlugs = query(
+  "SELECT slug FROM movies WHERE source_id = (SELECT id FROM sources WHERE name = 'Khalti')"
+);
+
+app.get('/api/v1/khalti/cinemas', async (_req, res) => {
+  try {
+    // Try DB first, fall back to live scrape
+    let cinemas = query(
+      "SELECT slug, name, city FROM theaters WHERE source_id = (SELECT id FROM sources WHERE name = 'Khalti') ORDER BY name"
+    );
+    if (cinemas.length === 0) {
+      const scraped = await khaltiScraper.scrapeCinemas();
+      cinemas = scraped.map((c) => ({ slug: c.idx, name: c.name, city: c.city }));
+    }
+    res.json({ data: cinemas, count: cinemas.length });
+  } catch (err) {
+    console.error('[api] khalti/cinemas failed:', err);
+    res.status(500).json({ error: 'Failed to fetch Khalti cinemas' });
+  }
+});
+
+app.get('/api/v1/khalti/movies', async (_req, res) => {
+  try {
+    // Try DB first, fall back to live scrape
+    let movies = query(
+      "SELECT slug, title, genre, runtime_minutes AS duration, certificate, synopsis, director, cast FROM movies WHERE source_id = (SELECT id FROM sources WHERE name = 'Khalti') ORDER BY title"
+    );
+    if (movies.length === 0) {
+      const scraped = await khaltiScraper.scrapeNowShowingMovies();
+      movies = (scraped.movies || []).map((m) => ({
+        idx: m.idx,
+        title: m.title,
+        genre: m.genre,
+        duration: m.duration,
+        grade: m.grade,
+        releaseDate: m.releaseDate,
+        trailerUrl: m.trailerUrl,
+        posterUrl: m.posterUrl,
+        certificate: m.certificate,
+        synopsis: m.synopsis,
+        director: m.director,
+        cast: m.cast,
+        rating: m.rating,
+      }));
+    }
+    res.json({
+      data: movies,
+      count: movies.length,
+      halls: [],
+    });
+  } catch (err) {
+    console.error('[api] khalti/movies failed:', err);
+    res.status(500).json({ error: 'Failed to fetch Khalti movies' });
+  }
+});
+
+app.get('/api/v1/khalti/movies/:idx', async (req, res) => {
+  try {
+    const { idx } = req.params;
+    // Try DB first, fall back to live scrape
+    const movie = query(
+      "SELECT slug, title, genre, runtime_minutes AS duration, certificate, synopsis, director, cast, release_date AS releaseDate FROM movies WHERE slug = ? AND source_id = (SELECT id FROM sources WHERE name = 'Khalti')",
+      [idx]
+    );
+    if (!movie.length) {
+      const scraped = await khaltiScraper.scrapeMovieShowtimes(idx);
+      if (!scraped.movie) return res.status(404).json({ error: 'Khalti movie not found' });
+      return res.json({
+        idx: scraped.movie.idx,
+        title: scraped.movie.title,
+        genre: scraped.movie.genre,
+        duration: scraped.movie.duration,
+        grade: scraped.movie.grade,
+        releaseDate: scraped.movie.releaseDate,
+        posterUrl: scraped.movie.posterUrl,
+        synopsis: scraped.movie.synopsis,
+        director: scraped.movie.director,
+        cast: scraped.movie.cast,
+        rating: scraped.movie.rating,
+        showtimes: scraped.cinemas.map((c) => ({
+          cinemaIdx: c.cinemaIdx,
+          cinemaName: c.cinemaName,
+          cinemaLocation: c.cinemaLocation,
+          cinemaCity: c.cinemaCity,
+          cinemaLogo: c.cinemaLogo,
+          showId: c.showId,
+          showDate: c.showDate,
+          sessionTime: c.sessionTime,
+          showTime: c.showTime,
+          auditorium: c.auditorium,
+          totalSeats: c.totalSeats,
+          availableSeats: c.availableSeats,
+          earliestTimeToBookBefore: c.earliestTimeToBookBefore,
+          availability: c.availability,
+          useNewLayout: c.useNewLayout,
+          resolution: c.resolution,
+          audioFormat: c.audioFormat,
+          visualFormat: c.visualFormat,
+          color: c.color,
+          bookingUrl: c.bookingUrl,
+        })),
+      });
+    }
+    const movieRow = movie[0];
+    // Get showtimes for this movie from DB
+    const showtimes = query(
+      `SELECT t.slug AS cinemaIdx, t.name AS cinemaName, t.city AS cinemaCity, s.show_date, s.session_time, s.show_id, s.booking_url,
+              s.total_seats, s.available_seats, s.earliest_time_to_book_before, s.auditorium, s.availability
+       FROM showtimes s
+       JOIN theaters t ON t.id = s.theater_id
+       WHERE s.movie_id = ? ORDER BY s.show_date, s.session_time`,
+      [movieRow.id]
+    );
+    res.json({
+      idx: movieRow.slug,
+      title: movieRow.title,
+      genre: movieRow.genre,
+      duration: movieRow.duration,
+      grade: movieRow.certificate,
+      releaseDate: movieRow.release_date,
+      posterUrl: movieRow.poster_url,
+      synopsis: movieRow.synopsis,
+      director: movieRow.director,
+      cast: movieRow.cast,
+      rating: movieRow.certificate,
+      showtimes: showtimes.map((s) => ({
+        cinemaIdx: s.cinemaIdx,
+        cinemaName: s.cinemaName,
+        cinemaLocation: s.cinemaCity,
+        cinemaCity: s.cinemaCity,
+        cinemaLogo: null,
+        showId: s.show_id,
+        showDate: s.show_date,
+        sessionTime: s.session_time,
+        showTime: s.show_date + ' ' + s.session_time,
+        auditorium: s.auditorium,
+        totalSeats: s.total_seats,
+        availableSeats: s.available_seats,
+        earliestTimeToBookBefore: s.earliest_time_to_book_before,
+        availability: s.availability,
+        useNewLayout: null,
+        resolution: null,
+        audioFormat: null,
+        visualFormat: null,
+        color: null,
+        bookingUrl: s.booking_url,
+      })),
+    });
+  } catch (err) {
+    console.error('[api] khalti/movies/:idx failed:', err);
+    res.status(500).json({ error: 'Failed to fetch Khalti movie detail' });
+  }
 });
 
 // -------------------------------------------------------------- ticket prices

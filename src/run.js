@@ -7,8 +7,9 @@
  */
 
 import { TFNScraper } from './scraper/tfn.js';
-import { ensureSource, saveMovie, saveTheater, saveShowtime, savePrice } from './db/database.js';
+import { ensureSource, saveMovie, saveTheater, saveShowtime, savePrice, query, saveKhaltiMovie, saveKhaltiCinema, saveKhaltiShowtime } from './db/database.js';
 import { ShowtimeNepalScraper } from './scraper/showtimenepal.js';
+import { KhaltiScraper } from './scraper/khalti.js';
 
 const LIMIT = Number(process.env.LIMIT || 0); // 0 = full catalog
 
@@ -69,6 +70,95 @@ async function main() {
     savePrice(p);
   }
   console.log(`[run] Saved ${prices.length} ticket price rows`);
+
+  console.log('[run] Done.');
+
+  // 5) Khalti data (cinemas + movies + showtimes)
+  console.log('[run] Scraping Khalti data...');
+  const khaltiScraper = new KhaltiScraper();
+  const khaltiSource = ensureSource({
+    name: 'Khalti',
+    baseUrl: khaltiScraper.baseUrl,
+    config: { concurrency: 4 },
+    status: 'active',
+    reliabilityScore: 1.0,
+  });
+  console.log(`[run] Khalti source registered: id=${khaltiSource.id}`);
+
+  const khaltiMovies = await khaltiScraper.scrapeNowShowingMovies();
+  console.log(`[run] Khalti now-playing movies: ${khaltiMovies.movies?.length || 0}`);
+
+  // Save Khalti movies
+  const savedMovies = [];
+  for (const m of khaltiMovies.movies || []) {
+    const res = saveKhaltiMovie({
+      sourceId: khaltiSource.id,
+      idx: m.idx,
+      title: m.title,
+      genre: m.genre,
+      duration: m.duration,
+      grade: m.grade,
+      releaseDate: m.releaseDate,
+      trailerUrl: m.trailerUrl,
+      posterUrl: m.posterUrl,
+      certificate: m.certificate,
+      synopsis: m.synopsis,
+      director: m.director,
+      cast: m.cast,
+    });
+    savedMovies.push(res);
+  }
+  console.log(`[run] Saved ${savedMovies.length} Khalti movies`);
+
+  // Save Khalti cinemas (halls)
+  const khaltiCinemas = khaltiMovies.theatres || [];
+  const savedCinemas = [];
+  for (const c of khaltiCinemas) {
+    const res = saveKhaltiCinema({
+      sourceId: khaltiSource.id,
+      idx: c.idx,
+      name: c.name,
+      logo: c.logo,
+      city: c.city,
+      location: c.location,
+    });
+    savedCinemas.push(res);
+  }
+  console.log(`[run] Saved ${savedCinemas.length} Khalti cinemas`);
+
+  // Save Khalti showtimes (link to movies/theaters by idx)
+  let savedShowtimes = 0;
+  const uniqueShows = new Set();
+  for (const m of khaltiMovies.movies || []) {
+    if (!m.idx) continue;
+    const { cinemas = [] } = await khaltiScraper.scrapeMovieShowtimes(m.idx);
+    for (const c of cinemas) {
+      const key = `${m.idx}:${c.cinemaIdx}:${c.showDate}:${c.sessionTime}`;
+      if (uniqueShows.has(key)) continue;
+      uniqueShows.add(key);
+      const res = saveKhaltiShowtime({
+        sourceId: khaltiSource.id,
+        movieIdx: m.idx,
+        theaterIdx: c.cinemaIdx,
+        showDate: c.showDate,
+        sessionTime: c.sessionTime,
+        showId: c.showId,
+        bookingUrl: c.bookingUrl,
+        totalSeats: c.totalSeats,
+        availableSeats: c.availableSeats,
+        earliestTimeToBookBefore: c.earliestTimeToBookBefore,
+        auditorium: c.auditorium,
+        availability: c.availability,
+        useNewLayout: c.useNewLayout,
+        resolution: c.resolution,
+        audioFormat: c.audioFormat,
+        visualFormat: c.visualFormat,
+        color: c.color,
+      });
+      if (res) savedShowtimes += 1;
+    }
+  }
+  console.log(`[run] Saved ${savedShowtimes} Khalti showtimes`);
 
   console.log('[run] Done.');
 }

@@ -56,4 +56,17 @@ export const api = {
   async getPrices(movieSlug) {
     return apiFetch('/v1/prices?movie=' + encodeURIComponent(movieSlug));
   },
+
+  // ------------------------------------------------------------- Khalti source
+  async getKhaltiCinemas() {
+    return apiFetch('/v1/khalti/cinemas');
+  },
+
+  async getKhaltiMovies() {
+    return apiFetch('/v1/khalti/movies');
+  },
+
+  async getKhaltiMovieShowtimes(idx) {
+    return apiFetch('/v1/khalti/movies/' + encodeURIComponent(idx));
+  },
 };

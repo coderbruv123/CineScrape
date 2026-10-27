@@ -58,6 +58,10 @@ export function initSchema() {
       release_date TEXT,
       director TEXT,
       production_company TEXT,
+      language TEXT,
+      ratings TEXT,
+      audience_grade TEXT,
+      fcube_id INTEGER,
       scraped_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       is_active INTEGER NOT NULL DEFAULT 1,
@@ -87,6 +91,18 @@ export function initSchema() {
       session_time TEXT NOT NULL,
       scraped_at TEXT NOT NULL DEFAULT (datetime('now')),
       is_active INTEGER NOT NULL DEFAULT 1,
+      show_id TEXT,
+      booking_url TEXT,
+      total_seats INTEGER,
+      available_seats INTEGER,
+      earliest_time_to_book_before INTEGER,
+      auditorium TEXT,
+      availability TEXT,
+      useNewLayout INTEGER,
+      resolution TEXT,
+      audioFormat TEXT,
+      visualFormat TEXT,
+      color TEXT,
       UNIQUE(movie_id, theater_id, show_date, session_time)
     );
 
@@ -243,13 +259,138 @@ export function saveTheater({ sourceId, slug, name, city, branchCount }) {
 /**
  * Insert or update a showtime (upsert keyed on movie + theater + date + time).
  */
-export function saveShowtime({ sourceId, movieId, theaterId, showDate, sessionTime }) {
+export function saveShowtime({ sourceId, movieId, theaterId, showDate, sessionTime, showId, bookingUrl, totalSeats, availableSeats, earliestTimeToBookBefore }) {
   const db = getDb();
   const info = db.prepare(`
-    INSERT INTO showtimes (source_id, movie_id, theater_id, show_date, session_time)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO showtimes (source_id, movie_id, theater_id, show_date, session_time, show_id, booking_url, total_seats, available_seats, earliest_time_to_book_before, auditorium, availability, useNewLayout, resolution, audioFormat, visualFormat, color)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(movie_id, theater_id, show_date, session_time) DO UPDATE SET
-      scraped_at = datetime('now')
-  `).run(sourceId, movieId, theaterId, showDate, sessionTime);
+      scraped_at = datetime('now'),
+      show_id = excluded.show_id,
+      booking_url = excluded.booking_url,
+      total_seats = excluded.total_seats,
+      available_seats = excluded.available_seats,
+      earliest_time_to_book_before = excluded.earliest_time_to_book_before,
+      auditorium = excluded.auditorium,
+      availability = excluded.availability,
+      useNewLayout = excluded.useNewLayout,
+      resolution = excluded.resolution,
+      audioFormat = excluded.audioFormat,
+      visualFormat = excluded.visualFormat,
+      color = excluded.color
+  `).run(sourceId, movieId, theaterId, showDate, sessionTime, showId || null, bookingUrl || null, totalSeats || null, availableSeats || null, earliestTimeToBookBefore || null, auditorium || null, availability || null, useNewLayout || null, resolution || null, audioFormat || null, visualFormat || null, color || null);
+  return { id: info.lastInsertRowid, changes: info.changes };
+}
+
+/**
+ * Save a Khalti movie to the movies table (upsert by slug).
+ * Khalti uses idx as the slug (it is the unique movie identifier).
+ */
+export function saveKhaltiMovie({
+  sourceId, idx, title, genre, duration, grade, releaseDate,
+  trailerUrl, posterUrl, certificate, synopsis, director, cast,
+  language, ratings, audience, prioritizedVisualFormat, fcubeId
+}) {
+  const db = getDb();
+  // Check if a movie with this title already exists (from another source)
+  const existing = db.prepare(
+    `SELECT id, source_id, title, genre, runtime_minutes, poster_url, release_date, director, "cast", synopsis, language, ratings, audience_grade, fcube_id FROM movies WHERE LOWER(title) = LOWER(?) AND source_id != ? LIMIT 1`
+  ).get(title, sourceId);
+  if (existing) {
+    // Merge: keep existing fields if new ones are missing
+    const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    db.prepare(`
+      UPDATE movies SET
+        title = COALESCE(?, title),
+        genre = COALESCE(?, genre),
+        runtime_minutes = COALESCE(?, runtime_minutes),
+        poster_url = COALESCE(?, poster_url),
+        release_date = COALESCE(?, release_date),
+        director = COALESCE(?, director),
+      "cast" = COALESCE(?, "cast"),
+        synopsis = COALESCE(?, synopsis),
+        language = COALESCE(?, language),
+        ratings = COALESCE(?, ratings),
+        audience_grade = COALESCE(?, audience_grade),
+        fcube_id = COALESCE(?, fcube_id),
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(
+      title, genre, duration, posterUrl, releaseDate, director, cast, synopsis, language, ratings, audience?.grade?.name || null, fcubeId, existing.id
+    );
+    return { id: existing.id, changes: 1, updated: true };
+  }
+  const info = db.prepare(`
+    INSERT INTO movies (source_id, slug, title, genre, runtime_minutes, poster_url, release_date, director, cast, synopsis, language, ratings, audience_grade, fcube_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(slug) DO UPDATE SET
+      title = excluded.title,
+      genre = excluded.genre,
+      runtime_minutes = excluded.runtime_minutes,
+      poster_url = excluded.poster_url,
+      release_date = excluded.release_date,
+      director = excluded.director,
+      cast = excluded.cast,
+      synopsis = excluded.synopsis,
+      language = excluded.language,
+      ratings = excluded.ratings,
+      audience_grade = excluded.audience_grade,
+      fcube_id = excluded.fcube_id,
+      updated_at = datetime('now')
+  `).run(sourceId, idx, title, genre, duration, posterUrl, releaseDate, director, cast, synopsis, language, ratings, audience?.name || null, fcubeId);
+  return { id: info.lastInsertRowid, changes: info.changes, updated: false };
+}
+
+/**
+ * Insert or update a Khalti cinema (hall) by idx.
+ */
+export function saveKhaltiCinema({ sourceId, idx, name, logo, city, location }) {
+  const db = getDb();
+  const info = db.prepare(`
+    INSERT INTO theaters (source_id, slug, name, city, branch_count)
+    VALUES (?, ?, ?, ?, 0)
+    ON CONFLICT(slug) DO UPDATE SET
+      name = excluded.name,
+      city = excluded.city,
+      updated_at = datetime('now')
+  `).run(sourceId, idx, name, city);
+  return { id: info.lastInsertRowid, changes: info.changes };
+}
+
+/**
+ * Save a Khalti showtime and link to the movie and theater by idx.
+ */
+export function saveKhaltiShowtime({
+  sourceId, movieIdx, theaterIdx, showDate, sessionTime,
+  showId, bookingUrl, totalSeats, availableSeats, earliestTimeToBookBefore,
+  auditorium, availability, useNewLayout, resolution, audioFormat, visualFormat, color
+}) {
+  const db = getDb();
+  // Look up movie id by Khalti idx
+  const m = query('SELECT id FROM movies WHERE slug = ? AND is_active = 1', [movieIdx]);
+  if (!m.length) return null;
+  const movieId = m[0].id;
+  // Look up theater id by Khalti idx
+  const t = query('SELECT id FROM theaters WHERE slug = ? AND is_active = 1', [theaterIdx]);
+  if (!t.length) return null;
+  const theaterId = t[0].id;
+  const info = db.prepare(`
+      INSERT INTO showtimes (source_id, movie_id, theater_id, show_date, session_time, show_id, booking_url, total_seats, available_seats, earliest_time_to_book_before, auditorium, availability, useNewLayout, resolution, audioFormat, visualFormat, color)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(movie_id, theater_id, show_date, session_time) DO UPDATE SET
+        scraped_at = datetime('now'),
+        show_id = excluded.show_id,
+        booking_url = excluded.booking_url,
+        total_seats = excluded.total_seats,
+        available_seats = excluded.available_seats,
+        earliest_time_to_book_before = excluded.earliest_time_to_book_before,
+        auditorium = excluded.auditorium,
+        availability = excluded.availability,
+        useNewLayout = excluded.useNewLayout,
+        resolution = excluded.resolution,
+        audioFormat = excluded.audioFormat,
+        visualFormat = excluded.visualFormat,
+        color = excluded.color
+    `).run(sourceId, movieId, theaterId, showDate, sessionTime, showId || null, bookingUrl || null, totalSeats || null, availableSeats || null, earliestTimeToBookBefore || null, auditorium || null, availability || null, useNewLayout || null, resolution || null, audioFormat || null, visualFormat || null, color || null);
   return { id: info.lastInsertRowid, changes: info.changes };
 }
